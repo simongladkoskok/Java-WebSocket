@@ -53,6 +53,7 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 	protected SSLEngineResult engineResult;
 	protected SSLEngine sslEngine;
 
+	protected int bufferallocations = 0;
 
 	private Status engineStatus = Status.BUFFER_UNDERFLOW;
 
@@ -127,13 +128,15 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 			}
 		}
 		consumeDelegatedTasks();
-		assert ( engineResult.getHandshakeStatus() != HandshakeStatus.NOT_HANDSHAKING );
 		if( tasks.isEmpty() || engineResult.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_WRAP ) {
 			socketChannel.write( wrap( emptybuffer ) );
 			if( engineResult.getHandshakeStatus() == HandshakeStatus.FINISHED ) {
 				createBuffers( sslEngine.getSession() );
+				return;
 			}
 		}
+		assert ( engineResult.getHandshakeStatus() != HandshakeStatus.NOT_HANDSHAKING );
+		bufferallocations = 1;
 	}
 
 	private synchronized ByteBuffer wrap( ByteBuffer b ) throws SSLException {
@@ -166,6 +169,7 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 	protected void createBuffers( SSLSession session ) {
 		int appBufferMax = session.getApplicationBufferSize();
 		int netBufferMax = session.getPacketBufferSize();
+		appBufferMax = Math.max(appBufferMax, netBufferMax);
 
 		if( inData == null ) {
 			inData = ByteBuffer.allocate( appBufferMax );
@@ -185,6 +189,7 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 		inCrypt.flip();
 		outCrypt.rewind();
 		outCrypt.flip();
+		bufferallocations++;
 	}
 
 	public int write( ByteBuffer src ) throws IOException {
@@ -192,6 +197,7 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 			processHandshake();
 			return 0;
 		}
+		assert (bufferallocations > 1);
 		int num = socketChannel.write( wrap( src ) );
 		return num;
 
@@ -216,7 +222,8 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 				}
 			}
 		}
-
+		assert (bufferallocations >1);
+		
 		int purged = readRemaining( dst );
 		if( purged != 0 )
 			return purged;
@@ -229,7 +236,8 @@ public class SSLSocketChannel2 implements ByteChannel, WrappedByteChannel {
 		else
 			inCrypt.compact();
 
-		if( ( isBlocking() && inCrypt.position() == 0 ) || engineStatus == Status.BUFFER_UNDERFLOW )
+//		if( ( isBlocking() && inCrypt.position() == 0 ) || engineStatus == Status.BUFFER_UNDERFLOW )
+		if ( isBlocking() || engineStatus == Status.BUFFER_UNDERFLOW)
 			if( socketChannel.read( inCrypt ) == -1 ) {
 				return -1;
 			}
