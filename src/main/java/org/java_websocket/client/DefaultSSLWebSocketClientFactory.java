@@ -12,10 +12,13 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 
 import org.java_websocket.SSLSocketChannel2;
+import org.java_websocket.SSLSocketChannel3;
 import org.java_websocket.WebSocketAdapter;
 import org.java_websocket.WebSocketImpl;
 import org.java_websocket.client.WebSocketClient.WebSocketClientFactory;
 import org.java_websocket.drafts.Draft;
+
+import android.os.Build;
 
 
 public class DefaultSSLWebSocketClientFactory implements WebSocketClientFactory {
@@ -37,6 +40,8 @@ public class DefaultSSLWebSocketClientFactory implements WebSocketClientFactory 
 	public ByteChannel wrapChannel( SocketChannel channel, SelectionKey key, String host, int port ) throws IOException {
 		SSLEngine e = sslcontext.createSSLEngine( host, port );
 		e.setUseClientMode( true );
+		if (Build.VERSION.SDK_INT > Build.VERSION_CODES.KITKAT)
+		return new SSLSocketChannel3( channel, e, exec, key );
 		return new SSLSocketChannel2( channel, e, exec, key );
 	}
 
