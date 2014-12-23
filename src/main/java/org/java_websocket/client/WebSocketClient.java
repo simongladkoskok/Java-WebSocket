@@ -72,6 +72,8 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 
 	private InetSocketAddress proxyAddress = null;
 
+	private volatile boolean isConnected;
+
 	public WebSocketClient( URI serverURI ) {
 		this( serverURI, new Draft_10() );
 	}
@@ -137,7 +139,9 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 		if( writethread != null )
 			throw new IllegalStateException( "WebSocketClient objects are not reuseable" );
 		writethread = new Thread( this );
+		writethread.setName("WebSocketClient");
 		writethread.start();
+		isConnected = true;
 	}
 
 	/**
@@ -153,6 +157,7 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 	public void close() {
 		if( writethread != null ) {
 			conn.close( CloseFrame.NORMAL );
+			isConnected = false;
 		}
 	}
 
@@ -160,6 +165,7 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 		close();
 		closeLatch.await();
 	}
+	
 
 	/**
 	 * Sends <var>text</var> to the connected WebSocket server.
@@ -225,7 +231,7 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 
 		ByteBuffer buff = ByteBuffer.allocate( WebSocketImpl.RCVBUF );
 		try/*IO*/{
-			while ( channel.isOpen() ) {
+			while (channel.isOpen() ) {
 				if( SocketChannelIOHelper.read( buff, this.conn, wrappedchannel ) ) {
 					conn.decode( buff );
 				} else {
@@ -235,7 +241,7 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 				if( wrappedchannel instanceof WrappedByteChannel ) {
 					WrappedByteChannel w = (WrappedByteChannel) wrappedchannel;
 					if( w.isNeedRead() ) {
-						while ( SocketChannelIOHelper.readMore( buff, conn, w ) ) {
+						while (isConnected && SocketChannelIOHelper.readMore( buff, conn, w ) ) {
 							conn.decode( buff );
 						}
 						conn.decode( buff );
